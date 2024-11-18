@@ -1,0 +1,510 @@
+<html><head><base href="." /><title>Candy Snake Game</title><style>
+body {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #ff9aa2, #ffb7b2);
+    font-family: Arial, sans-serif;
+}
+
+#gameContainer {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+}
+
+#gameCanvas {
+    border: 3px solid #ff6b81;
+    border-radius: 10px;
+    display: none;
+}
+
+#score, #level {
+    text-align: center;
+    font-size: 24px;
+    color: #ff6b81;
+    margin: 10px 0;
+    display: none;
+}
+
+.candy {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: radial-gradient(circle at 30% 30%, #ff6b81, #ff4757);
+    border-radius: 50%;
+}
+
+#menu {
+    text-align: center;
+}
+
+.menu-button {
+    display: block;
+    width: 200px;
+    padding: 15px;
+    margin: 10px auto;
+    background: linear-gradient(135deg, #ff6b81, #ff4757);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.menu-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(255, 107, 129, 0.4);
+}
+
+#gameTitle {
+    color: #ff4757;
+    font-size: 36px;
+    margin-bottom: 30px;
+}
+</style></head><body>
+<div id="gameContainer">
+    <div id="menu">
+        <h1 id="gameTitle">Candy Snake</h1>
+        <button class="menu-button" onclick="startClassicMode()">Classic Mode</button>
+        <button class="menu-button" onclick="startCampaignMode()">Campaign Mode</button>
+        <button class="menu-button" onclick="quitGame()">Quit Game</button>
+    </div>
+    <div id="score">Score: 0</div>
+    <div id="level">Level: 1</div>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+const levelElement = document.getElementById('level');
+const menuElement = document.getElementById('menu');
+
+const gridSize = 20;
+const tileCount = canvas.width / gridSize;
+
+let score = 0;
+let level = 1;
+let snake = [{x: 10, y: 10}];
+let candy = {
+    x: Math.floor(Math.random() * tileCount),
+    y: Math.floor(Math.random() * tileCount)
+};
+let xVelocity = 0;
+let yVelocity = 0;
+let speed = 5; // Reduced from 7 to 5
+let gameLoop;
+let candyNeededForNextLevel = 5;
+let candiesCollected = 0;
+let gameMode = '';
+let campaignLevels = [
+    { required: 5, speed: 5 }, // Reduced from 7 to 5
+    { required: 7, speed: 6 }, // Reduced from 8 to 6
+    { required: 10, speed: 7 }, // Reduced from 9 to 7
+    { required: 12, speed: 8 }, // Reduced from 10 to 8
+    { required: 15, speed: 9 }  // Reduced from 11 to 9
+];
+
+let gameStarted = false;
+let countdownTimer = 3;
+let isPaused = false; // Added pause state variable
+
+function startClassicMode() {
+    gameMode = 'classic';
+    hideMenu();
+    resetGame();
+    startGame();
+}
+
+function startCampaignMode() {
+    gameMode = 'campaign';
+    hideMenu();
+    resetGame();
+    startGame();
+}
+
+function quitGame() {
+    if (confirm('Are you sure you want to quit?')) {
+        window.close();
+        // Fallback if window.close() is blocked
+        showMenu();
+        stopGame();
+    }
+}
+
+function hideMenu() {
+    menuElement.style.display = 'none';
+    canvas.style.display = 'block';
+    scoreElement.style.display = 'block';
+    levelElement.style.display = 'block';
+}
+
+function showMenu() {
+    menuElement.style.display = 'block';
+    canvas.style.display = 'none';
+    scoreElement.style.display = 'none';
+    levelElement.style.display = 'none';
+}
+
+function startGame() {
+    gameStarted = false;
+    document.addEventListener('keydown', changeDirection);
+    document.addEventListener('keydown', togglePause); // Added pause listener
+    startCountdown();
+}
+
+function startCountdown() {
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#ff6b81';
+    ctx.font = '40px Arial';
+    ctx.textAlign = 'center';
+    
+    if (countdownTimer > 0) {
+        ctx.fillText(countdownTimer, canvas.width/2, canvas.height/2);
+        countdownTimer--;
+        setTimeout(startCountdown, 1000);
+    } else if (countdownTimer === 0) {
+        ctx.fillText('Press any key to begin!', canvas.width/2, canvas.height/2);
+        document.addEventListener('keydown', beginGameplay, {once: true});
+    }
+}
+
+function beginGameplay() {
+    gameStarted = true;
+    countdownTimer = 3;
+    drawGame();
+}
+
+function stopGame() {
+    document.removeEventListener('keydown', changeDirection);
+    document.removeEventListener('keydown', togglePause); // Removed pause listener
+}
+
+function togglePause(event) {
+    if (event.code === 'Escape' && gameStarted) {
+        isPaused = !isPaused;
+        if (!isPaused) {
+            drawGame();
+        } else {
+            // Draw pause screen
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#ff6b81';
+            ctx.font = '40px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSED', canvas.width/2, canvas.height/2);
+            ctx.font = '20px Arial';
+            ctx.fillText('Press ESC to Resume', canvas.width/2, canvas.height/2 + 40);
+        }
+    }
+}
+
+function changeDirection(event) {
+    if (!gameStarted || isPaused) return; // Check for pause
+    
+    const LEFT = 37;
+    const UP = 38;
+    const RIGHT = 39;
+    const DOWN = 40;
+
+    const keyPressed = event.keyCode;
+    const goingUp = yVelocity === -1;
+    const goingDown = yVelocity === 1;
+    const goingRight = xVelocity === 1;
+    const goingLeft = xVelocity === -1;
+
+    if (keyPressed === LEFT && !goingRight) {
+        xVelocity = -1;
+        yVelocity = 0;
+    }
+    if (keyPressed === UP && !goingDown) {
+        xVelocity = 0;
+        yVelocity = -1;
+    }
+    if (keyPressed === RIGHT && !goingLeft) {
+        xVelocity = 1;
+        yVelocity = 0;
+    }
+    if (keyPressed === DOWN && !goingUp) {
+        xVelocity = 0;
+        yVelocity = 1;
+    }
+}
+
+function drawGame() {
+    if (!gameStarted || isPaused) return;  // Modified to add isPaused check
+
+    moveSnake();
+    
+    if (isGameOver()) {
+        displayGameOver();
+        return;
+    }
+
+    clearCanvas();
+    drawCandy();
+    drawSnake();
+
+    setTimeout(drawGame, 1000/speed);
+}
+
+function moveSnake() {
+    const head = {
+        x: snake[0].x + xVelocity,
+        y: snake[0].y + yVelocity
+    };
+    snake.unshift(head);
+    if (!hasEatenCandy()) {
+        snake.pop();
+    }
+}
+
+function hasEatenCandy() {
+    if (snake[0].x === candy.x && snake[0].y === candy.y) {
+        score += 10 * level;
+        candiesCollected++;
+        scoreElement.textContent = `Score: ${score}`;
+        
+        if (candiesCollected >= candyNeededForNextLevel) {
+            levelUp();
+        }
+        
+        moveCandy();
+        speed += 0.2; // Reduced speed increase from 0.5 to 0.2
+        return true;
+    }
+    return false;
+}
+
+function levelUp() {
+    level++;
+    levelElement.textContent = `Level: ${level}`;
+    candiesCollected = 0;
+    
+    if (gameMode === 'campaign') {
+        if (level > campaignLevels.length) {
+            displayVictory();
+            return;
+        }
+        candyNeededForNextLevel = campaignLevels[level-1].required;
+        speed = campaignLevels[level-1].speed;
+    } else {
+        candyNeededForNextLevel += 2;
+        speed += 0.5; // Reduced speed increase from 1 to 0.5
+    }
+    
+    gameContainer.style.animation = 'pulse 0.5s';
+    setTimeout(() => {
+        gameContainer.style.animation = '';
+    }, 500);
+}
+
+function displayVictory() {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#ff6b81';
+    ctx.font = '40px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Campaign Complete!', canvas.width/2, canvas.height/2);
+    
+    ctx.font = '20px Arial';
+    ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 40);
+    ctx.fillText('Press Space to Return to Menu', canvas.width/2, canvas.height/2 + 70);
+}
+
+function displayGameOver() {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#ff6b81';
+    ctx.font = '40px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Game Over!', canvas.width/2, canvas.height/2);
+    
+    ctx.font = '20px Arial';
+    ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 40);
+    ctx.fillText(`Level Reached: ${level}`, canvas.width/2, canvas.height/2 + 70);
+    ctx.fillText('Press Space to Return to Menu', canvas.width/2, canvas.height/2 + 100);
+}
+
+document.addEventListener('keydown', function(event) {
+    if (event.code === 'Space' && (isGameOver() || level > campaignLevels.length)) {
+        showMenu();
+    }
+});
+
+function moveCandy() {
+    let newX, newY;
+    do {
+        newX = Math.floor(Math.random() * tileCount);
+        newY = Math.floor(Math.random() * tileCount);
+    } while (isOnSnake(newX, newY));
+    
+    candy.x = newX;
+    candy.y = newY;
+}
+
+function isOnSnake(x, y) {
+    return snake.some(segment => segment.x === x && segment.y === y);
+}
+
+function drawSnake() {
+    snake.forEach((segment, index) => {
+        const gradient = ctx.createRadialGradient(
+            segment.x * gridSize + gridSize/2,
+            segment.y * gridSize + gridSize/2,
+            0,
+            segment.x * gridSize + gridSize/2,
+            segment.y * gridSize + gridSize/2,
+            gridSize/2
+        );
+        
+        if (index === 0) {
+            // Head
+            gradient.addColorStop(0, '#ff6b81');
+            gradient.addColorStop(1, '#ff4757');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
+            ctx.strokeStyle = 'white';
+            ctx.strokeRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
+
+            // Draw eyes
+            ctx.fillStyle = 'white';
+            // Left eye
+            let eyeSize = 4;
+            let eyeOffset = 5;
+            
+            // Adjust eye positions based on direction
+            if (xVelocity === 1) { // Moving right
+                ctx.fillRect(segment.x * gridSize + gridSize - 8, segment.y * gridSize + eyeOffset, eyeSize, eyeSize);
+                ctx.fillRect(segment.x * gridSize + gridSize - 8, segment.y * gridSize + gridSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+            } else if (xVelocity === -1) { // Moving left
+                ctx.fillRect(segment.x * gridSize + 4, segment.y * gridSize + eyeOffset, eyeSize, eyeSize);
+                ctx.fillRect(segment.x * gridSize + 4, segment.y * gridSize + gridSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+            } else if (yVelocity === -1) { // Moving up
+                ctx.fillRect(segment.x * gridSize + eyeOffset, segment.y * gridSize + 4, eyeSize, eyeSize);
+                ctx.fillRect(segment.x * gridSize + gridSize - eyeOffset - eyeSize, segment.y * gridSize + 4, eyeSize, eyeSize);
+            } else if (yVelocity === 1) { // Moving down
+                ctx.fillRect(segment.x * gridSize + eyeOffset, segment.y * gridSize + gridSize - 8, eyeSize, eyeSize);
+                ctx.fillRect(segment.x * gridSize + gridSize - eyeOffset - eyeSize, segment.y * gridSize + gridSize - 8, eyeSize, eyeSize);
+            } else { // Default (not moving or starting position)
+                ctx.fillRect(segment.x * gridSize + gridSize - 8, segment.y * gridSize + eyeOffset, eyeSize, eyeSize);
+                ctx.fillRect(segment.x * gridSize + gridSize - 8, segment.y * gridSize + gridSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+            }
+
+            // Draw pupils
+            ctx.fillStyle = 'black';
+            if (xVelocity === 1) {
+                ctx.fillRect(segment.x * gridSize + gridSize - 6, segment.y * gridSize + eyeOffset + 1, 2, 2);
+                ctx.fillRect(segment.x * gridSize + gridSize - 6, segment.y * gridSize + gridSize - eyeOffset - eyeSize + 1, 2, 2);
+            } else if (xVelocity === -1) {
+                ctx.fillRect(segment.x * gridSize + 4, segment.y * gridSize + eyeOffset + 1, 2, 2);
+                ctx.fillRect(segment.x * gridSize + 4, segment.y * gridSize + gridSize - eyeOffset - eyeSize + 1, 2, 2);
+            } else if (yVelocity === -1) {
+                ctx.fillRect(segment.x * gridSize + eyeOffset + 1, segment.y * gridSize + 4, 2, 2);
+                ctx.fillRect(segment.x * gridSize + gridSize - eyeOffset - eyeSize + 1, segment.y * gridSize + 4, 2, 2);
+            } else if (yVelocity === 1) {
+                ctx.fillRect(segment.x * gridSize + eyeOffset + 1, segment.y * gridSize + gridSize - 6, 2, 2);
+                ctx.fillRect(segment.x * gridSize + gridSize - eyeOffset - eyeSize + 1, segment.y * gridSize + gridSize - 6, 2, 2);
+            } else {
+                ctx.fillRect(segment.x * gridSize + gridSize - 6, segment.y * gridSize + eyeOffset + 1, 2, 2);
+                ctx.fillRect(segment.x * gridSize + gridSize - 6, segment.y * gridSize + gridSize - eyeOffset - eyeSize + 1, 2, 2);
+            }
+
+            // Draw mouth
+            ctx.strokeStyle = '#ff1744';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            if (xVelocity === 1) {
+                ctx.arc(segment.x * gridSize + gridSize - 5, segment.y * gridSize + gridSize/2, 3, -Math.PI/4, Math.PI/4);
+            } else if (xVelocity === -1) {
+                ctx.arc(segment.x * gridSize + 5, segment.y * gridSize + gridSize/2, 3, 3*Math.PI/4, 5*Math.PI/4);
+            } else if (yVelocity === -1) {
+                ctx.arc(segment.x * gridSize + gridSize/2, segment.y * gridSize + 5, 3, 5*Math.PI/4, 7*Math.PI/4);
+            } else if (yVelocity === 1) {
+                ctx.arc(segment.x * gridSize + gridSize/2, segment.y * gridSize + gridSize - 5, 3, Math.PI/4, 3*Math.PI/4);
+            } else {
+                ctx.arc(segment.x * gridSize + gridSize - 5, segment.y * gridSize + gridSize/2, 3, -Math.PI/4, Math.PI/4);
+            }
+            ctx.stroke();
+        } else {
+            // Body segments
+            gradient.addColorStop(0, '#ff9aa2');
+            gradient.addColorStop(1, '#ff6b81');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
+            ctx.strokeStyle = 'white';
+            ctx.strokeRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
+        }
+    });
+}
+
+function drawCandy() {
+    const gradient = ctx.createRadialGradient(
+        candy.x * gridSize + gridSize/2,
+        candy.y * gridSize + gridSize/2,
+        0,
+        candy.x * gridSize + gridSize/2,
+        candy.y * gridSize + gridSize/2,
+        gridSize/2
+    );
+    
+    gradient.addColorStop(0, '#ff4757');
+    gradient.addColorStop(1, '#ff6b81');
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(candy.x * gridSize + gridSize/2, candy.y * gridSize + gridSize/2, gridSize/2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function clearCanvas() {
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function isGameOver() {
+    if (snake[0].x < 0 || snake[0].x >= tileCount ||
+        snake[0].y < 0 || snake[0].y >= tileCount) {
+        return true;
+    }
+    
+    for (let i = 1; i < snake.length; i++) {
+        if (snake[0].x === snake[i].x && snake[0].y === snake[i].y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function resetGame() {
+    snake = [{x: 10, y: 10}];
+    candy = {
+        x: Math.floor(Math.random() * tileCount),
+        y: Math.floor(Math.random() * tileCount)
+    };
+    xVelocity = 0;
+    yVelocity = 0;
+    score = 0;
+    level = 1;
+    speed = gameMode === 'campaign' ? campaignLevels[0].speed : 5; // Reduced from 7 to 5
+    candiesCollected = 0;
+    candyNeededForNextLevel = gameMode === 'campaign' ? campaignLevels[0].required : 5;
+    scoreElement.textContent = `Score: ${score}`;
+    levelElement.textContent = `Level: ${level}`;
+    gameStarted = false;
+    countdownTimer = 3;
+}
+
+showMenu(); // Show menu initially instead of starting game directly
+</script></body></html>
